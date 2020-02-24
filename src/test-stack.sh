@@ -4,17 +4,26 @@
 # parameters are 
 # 1) stack repository
 # 2) stack name
-# 3) stack test properties file. 
-# 4) stack template name (optional if not specified will use default template)
+# 3) stack template name (optional if not specified will use default template)
 
 #######################
 # Check Application URL
 #######################
 
 checkAppURL() {
- up=`curl --dump-header - http://localhost:9080/starter/resource | grep "200 OK"`
- 
-  if [[ ! $up ]]; then
+ echo "Issueing command = curl --dump-header - $1/starter/resource | grep \"200 OK"
+ waitcount=1
+ while [ $waitcount -le 300 ]
+ do
+  sleep 1
+  up=`curl --dump-header - $1/starter/resource | grep "200 OK"`
+  if [[ -z $up ]]; then
+    waitcount=$(( $waitcount + 1 ))
+  else
+   waitcount=301
+  fi
+ done
+  if [[ -z $up ]]; then
     result="Test of application URL indicates it is NOT up, Test Failed!!!!!!"
   else
     result="Test of application URL indicates it is up"
@@ -25,13 +34,26 @@ checkAppURL() {
 # Check health url
 #####################
 checkHealthURL() {
-  up=`curl http://localhost:9080/health | jq -c '[. | {status: .status}]' | grep "UP"`
-  echo " up = $up" 
-  if [[ ! $up ]]; then
+  echo "Issuing command = curl $1/health | jq -c '[. | {status: .status}]' | grep \"UP\""
+
+ waitcount=1
+ while [ $waitcount -le 300 ]
+  do
+    sleep 1 
+    up=`curl $1/health | jq -c '[. | {status: .status}]' | grep "UP"`
+    echo "up = $up"
+    if [[ -z $up ]]; then
+       waitcount=$(( $waitcount + 1 ))
+    else
+       waitcount=301
+    fi
+  done
+  if [[ -z $up ]]; then
     result="Health Status indicates the application is NOT up, Test Failed!!!!!!"
   else
     result="Health status indicates the application is up"
   fi
+
   echo $result
 }
 
@@ -42,30 +64,41 @@ checkHealthURL() {
 getDeployedURL() {
    oldIFS=$IFS
    IFS=' '
-   for x in $1 
+   for x in $serverStarted
     do
-       url=`cat $x | grep http`
+       url=`echo $x | grep http`
     done
     IFS=$oldIFS
-    echo $url
 }
+###########################
+# Clean up after run
+#########################
+cleanup() {
 
+    if [ $1 -eq 0 ]; then
+      cd /tmp
+      rm -r $stack_loc
+      echo "Test of stack completed Successfully!!!!"
+    else
+      echo "Test of stack failed!! Results can be found in $stack_loc"    
+    fi
+}
 stopRun() {
 
-   runId=`ps | grep "appsody run" | grep -v grep`
-   runId=`echo $runId | head -n1 | awk '{print $1;}'`
+   runId=`ps -ef | grep "appsody run" | grep -v grep`
+   runId=`echo $runId | head -n1 | awk '{print $2;}'`
    echo "Stopping appsody runid $runId"
    kill $runId
 }
 
 #Check parameters
-if [ "$#" -lt 3 ]; then
+if [ "$#" -lt 2 ]; then
     echo "Illegal number of parameters"
-    echo "Command syntax is test-stack.sh repositoryName stackName propertiesFileName templateName"
+    echo "Command syntax is test-stack.sh repositoryName stackName templateName"
     exit 12
 fi
   appsodyNotInstalled=`appsody version | grep "command not found"`
-  if [[ $appsodyNotInstalled ]]; then 
+  if [[ ! -z $appsodyNotInstalled ]]; then 
     echo "appsody is not installed Please install appsody and try again"
     exit 12
   fi 
@@ -83,7 +116,6 @@ fi
  echo " Passed arguments: "
  echo "  repository = $repository "
  echo "  stack = $stack "
- echo "  props = $props "
  echo "  template = $template"
 
 
@@ -127,16 +159,13 @@ fi
  if [[ $? -ne 0 ]]; then
    echo "An error has occurred initializing the stack, rc=$?"
    echo  "\nTest Failed!!!!!!\n"
-   cleanup
+   cleanup 12
    exit 12
  fi
 ###########################
 # do a run from this stack #
 #t##########################
-# need to update this and remove hard coding of port 
-# and allow user to specify the port
-###################################
- appsody run -p 9444:9443 > run.log &
+ appsody run -p 9444:9443  > run.log &
  
  waitMessage="Waiting for server to start"
  waitcount=1
@@ -146,7 +175,7 @@ fi
     sleep 1
     waitcount=$(( $waitcount + 1 ))
     serverStarted=`cat run.log | grep "server is ready to run a smarter planet"`
-    if [[ ! serverStarted ]]; then
+    if [[ ! -z $serverStarted ]]; then
        waitcount=301
        echo "\nServer Has Started\n"
     else
@@ -154,91 +183,79 @@ fi
     fi
  done
  
- if [[ ! serverStarted ]]; then 
+ if [[ -z $serverStarted ]]; then 
    echo "Server has not successfully started in 6 minutes"
    echo  "\nTest Failed!!!!!!\n" 
    stopRun
-   cleanup 
+   cleanup 12
    exit 12 
  fi 
  
+ echo "Server has started" 
  healthURL="http://localhost:9080"
  checkHealthURL $healthURL
- echo "The result from checkHealthURL = $result"
  failed=`echo $results | grep Failed!`
- if [[ $failed ]]; then
-   echo $result
+ if [[ ! -z $failed ]]; then
    stopRun
-   cleanup
+   cleanup 12
    exit 12
- else
-   echo "Health status indicates the application is up"
  fi
 
 ################
 # Check app url
 ###############
-appURL="http://localhost:9080"
-checkAppURL $appURL
-up=`echo $result | grep Failed!`
- if [[ $up ]]; then
-    echo  $results
+ appURL="http://localhost:9080"
+ checkAppURL $appURL
+ up=`echo $result | grep Failed!`
+ if [[ ! -z $up ]]; then
     stopRun
-    cleanup
+    cleanup 12
     exit 12
- else
-    echo "Test of application URL indicates it is up"
  fi
 
  stopRun
 
- appsody deploy > deploy.log 2>&1 &
+ echo "Issuing appsody deploy"
+ appsody deploy > deploy.log 2>&1 
+ #####################################
+ # give the apps some time to start 
+ #####################################
+ sleep 15
+ serverStarted=`tail deploy.log | grep "Deployed project running at "`
 
- while [ $waitcount -le 300 ]
-  do
-    sleep 1
-    waitcount=$(( $waitcount + 1 ))
-    serverStarted=`tail deploy.log | grep "Deployed project running at"`
-    if [[ ! serverStarted ]]; then
-        waitcount=301
-       echo "\nServer Has Started\n"
-    else
-       waitcount=$(( $waitcount + 1 ))
-    fi
- done
-
- if [[ ! serverStarted ]]; then
-   echo "Server has not successfully started in 6 minutes"
-   echo  "\nTest Failed!!!!!!\n"
+ if [[ -z $serverStarted ]]; then
+   echo "Server failed to start  Test Failed!!!!!"
    appsody deploy delete
-   cleanup
+   cleanup 12
    exit 12
  fi
- 
  getDeployedURL $serverStarted
+
+ echo " "
+ echo "*********************************"
+ echo "       Kubernetes Deployments    "
+ kubectl get all
+ echo "*********************************"
+ echo " "
+ echo "Checking Health status with URL $url"
+ echo " "
  checkHealthURL $url
  up=`echo $result | grep Failed!`
-  if [[ $up ]]; then
-     echo  $results
-     appsody deploy delete
-     cleanup
+  if [[ ! -z $up ]]; then
+    # appsody deploy delete
+     cleanup 12
      exit 12
-  else
-     echo "Test of application URL indicates it is up"
   fi 
- 
+ echo "Checking appsody deploy app with $url"
  checkAppURL $url
  up=`echo $result | grep Failed!`
- if [[ $up ]]; then
-    echo  $results
- else
-    echo "Test of application URL indicates it is up"
- fi
- appsody deploy delete 
- cleanup 
- cd /tmp
- rm -r $stack_loc
- if [[ $? -ne 0 ]]; then
-   echo "non zero return code from clean up of stack install location, rc=$?"
+ if [[ ! -z $up ]]; then
+    echo  $up
+    #appsody deploy delete
+    cleanup 12
+    exit 12
  fi
  
+ #appsody deploy delete
+
+ cleanup 0 
