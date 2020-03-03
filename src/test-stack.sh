@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# use this script to test a stack
-# parameters are 
-# 1) stack repository
-# 2) stack name
-# 3) stack template name (optional if not specified will use default template)
-
 #######################
 # Check Application URL
 #######################
@@ -70,19 +64,27 @@ getDeployedURL() {
     done
     IFS=$oldIFS
 }
-###########################
+
+#########################
 # Clean up after run
 #########################
 cleanup() {
 
     if [ $1 -eq 0 ]; then
       cd /tmp
-      rm -r $stack_loc
-      echo "Test of stack completed Successfully!!!!"
+      chmod -R 777 $STACK_loc
+      rm -r $STACK_loc
+      echo "Test of STACK completed Successfully!!!!"
     else
-      echo "Test of stack failed!! Results can be found in $stack_loc"    
+      echo "Test of STACK failed!! Results can be found in $stack_loc"    
     fi
 }
+
+
+##########################################
+# Appsody run is started in the background
+# Use this to find the process and stop it
+##########################################
 stopRun() {
 
    runId=`ps -ef | grep "appsody run" | grep -v grep`
@@ -90,172 +92,254 @@ stopRun() {
    echo "Stopping appsody runid $runId"
    kill $runId
 }
+#########################################
+# Validate Parms are correct.
+#########################################
+checkParms() {
 
-#Check parameters
-if [ "$#" -lt 2 ]; then
-    echo "Illegal number of parameters"
-    echo "Command syntax is test-stack.sh repositoryName stackName templateName"
+   if [[ ! -z $GIT_REPO ]]; then
+      APPSODY_REPO=""
+      STACK=""
+      TEMPLATE=""
+   else
+     if [[ -z  $APPSODY_REPO ]]; then
+        echo "No Appsody repo passed "
+        invalidArgs 
+        exit 12
+     fi
+     if [[ -z $STACK ]]; then
+        echo "No Stack provided "
+        invalidArgs
+        exit 12
+     fi
+   fi
+
+}
+###########################################
+# Send message with command syntax when the
+# wrong arguments are passed
+##########################################
+invalidArgs() {
+  echo "Command syntax to initialize and test an appsody project:"
+  echo "test-stack.sh -a appsodyRepo -s appsodyStack -t appsodyTemplate"
+  echo " or to test a git repository containing one or more Appsody Projects:"
+  echo "test-stack.sh -g gitRepository"
+  echo " gitRepository is mutually exclusive with the other arguments. "
+  echo " If a combination of both are specified the script will exit with an error"
+  echo " appsodyTemplate is optional "
+}
+
+doRun() {
+ ###########################
+ # do a run from this STACK #
+ ############################
+  appsody run -p 9444:9443  > run.log &
+ 
+  waitMessage="Waiting for server to start"
+  waitcount=1
+  echo $waitMessage
+  while [ $waitcount -le 300 ]
+   do
+     sleep 1
+     waitcount=$(( $waitcount + 1 ))
+     serverStarted=`cat run.log | grep "server is ready to run a smarter planet"`
+     if [[ ! -z $serverStarted ]]; then
+        waitcount=301
+        echo "\nServer Has Started\n"
+     else
+        waitcount=$(( $waitcount + 1 ))
+     fi
+  done
+ 
+  if [[ -z $serverStarted ]]; then
+    echo "Server has not successfully started in 6 minutes"
+    echo  "\nTest Failed!!!!!!\n"
+    stopRun
+    cleanup 12
     exit 12
-fi
-  appsodyNotInstalled=`appsody version | grep "command not found"`
-  if [[ ! -z $appsodyNotInstalled ]]; then 
-    echo "appsody is not installed Please install appsody and try again"
+  fi
+
+  echo "Server has started" 
+  healthURL="http://localhost:9080"
+  checkHealthURL $healthURL
+  failed=`echo $results | grep Failed!`
+  if [[ ! -z $failed ]]; then
+    stopRun 
+    cleanup 12
     exit 12
-  fi 
- repository=$1
- stack=$2
- props=$3
- template=""
-
- stack_loc=test_$stack
-
- if [ "$#" -gt 3 ]; then
-   template=$4
- fi
-
- echo " Passed arguments: "
- echo "  repository = $repository "
- echo "  stack = $stack "
- echo "  template = $template"
-
-
- if [[ -f $props ]]; then 
-   echo "Properties file $props cannot be found"
-   exit 12
- fi
-
- repoExists=`appsody repo list | grep $repository`
- if [[ ! $repoExists ]]; then 
-    echo "repo $repository is not available, please select a valid repository"
-    exit 12
- fi
-
- stackInRepo=`appsody list | grep $stack | grep $repository`
- if [[ ! stackInRepo ]]; then
-     echo "Stack $stack is not available in repo $repo. Please select valid stack"
+  fi
+ 
+ ################
+ # Check app url
+ ###############
+  appURL="http://localhost:9080"
+  checkAppURL $appURL
+  up=`echo $result | grep Failed!`
+  if [[ ! -z $up ]]; then
+     stopRun 
+     cleanup 12
      exit 12
- fi
+  fi
+}
 
- # create a location for the stack to be initialized
+#############
+## Main
+############
+
+
+TEMPLATE=""
+GIT_REPO=""
+
+while [[ $# -gt 0 ]]
+do
+key="$1"
+case $key in
+    -g|--gitrepo)
+    GIT_REPO="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -a|--appsody_repo)
+    APPSODY_REPO="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -s|--stack)
+    STACK="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -t|--template)
+    TEMPLATE="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    *)    # unknown option
+    invalidArgs
+    exit 12
+    ;;
+esac
+done
+
+checkParms
+
+appsodyNotInstalled=`appsody version | grep "command not found"`
+
+if [[ ! -z $appsodyNotInstalled ]]; then 
+  echo "appsody is not installed Please install appsody and try again"
+  exit 12
+fi 
+
+ # create a location for the STACK to be initialized
  cd /tmp
  if [[ $? -ne 0 ]]; then
    echo "temp directory not avialable exiting "
    exit 12
  fi
- mkdir $stack_loc
- if [[ $? -ne 0 ]]; then
-    echo "unable to create location to install stack, exiting"
-    exit 12
- fi
- cd $stack_loc
- if [[ $? -ne 0 ]]; then
-   echo "unable to cd to stack install directory /tmp/$stack_loc, exiting"
-   exit 12
- fi
-######################### 
-# initialize the stack  #
-########################
- appsody init $repository/$stack $template
- if [[ $? -ne 0 ]]; then
-   echo "An error has occurred initializing the stack, rc=$?"
-   echo  "\nTest Failed!!!!!!\n"
-   cleanup 12
-   exit 12
- fi
-###########################
-# do a run from this stack #
-#t##########################
- appsody run -p 9444:9443  > run.log &
- 
- waitMessage="Waiting for server to start"
- waitcount=1
- echo $waitMessage
- while [ $waitcount -le 300 ]
-  do
-    sleep 1
-    waitcount=$(( $waitcount + 1 ))
-    serverStarted=`cat run.log | grep "server is ready to run a smarter planet"`
-    if [[ ! -z $serverStarted ]]; then
-       waitcount=301
-       echo "\nServer Has Started\n"
-    else
-       waitcount=$(( $waitcount + 1 ))
+ if [[ ! -z $GIT_REPO ]]; then
+    gitInstalled=`git --version | grep version`
+    if [[ -z $gitInstalled ]]; then
+       echo "git is not installed on this server, Please install git and try again"
+       exit 12
     fi
- done
+    gitCloneResults=`git clone $GIT_REPO`
+    STACK_loc=`echo $GIT_REPO |  awk '{split($0,a,"/"); print a[2]}' | awk '{split($0,a,"."); print a[1]}'`
+    if [[ -z $STACK_loc ]] || [[ ! -d $STACK_loc ]]; then
+      echo "Failure creating git repo: $gitCloneResults"
+      exit 12
+    fi
+    cd $STACK_loc
+    appsodyProjects=`find ./ -name .appsody-config.yaml`
+    for project in $appsodyProjects
+     do
+       project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/.appsody-config.yaml"); print a[1]}'`   
+       cd $project
+       echo "Appsody run for project at $project"
+       doRun
+       stopRun
+       cd - 
+     done
+ else
+
+   repoExists=`appsody repo list | grep $repository`
+   if [[ ! $repoExists ]]; then
+     echo "repo $repository is not available, please select a valid repository"
+     exit 12
+   fi
  
- if [[ -z $serverStarted ]]; then 
-   echo "Server has not successfully started in 6 minutes"
-   echo  "\nTest Failed!!!!!!\n" 
-   stopRun
-   cleanup 12
-   exit 12 
- fi 
- 
- echo "Server has started" 
- healthURL="http://localhost:9080"
- checkHealthURL $healthURL
- failed=`echo $results | grep Failed!`
- if [[ ! -z $failed ]]; then
-   stopRun
-   cleanup 12
-   exit 12
- fi
+   STACKInRepo=`appsody list | grep $stack | grep $repository`
+   if [[ ! STACKInRepo ]]; then
+      echo "Stack $STACK is not available in repo $repo. Please select valid stack"
+      exit 12
+   fi
 
-################
-# Check app url
-###############
- appURL="http://localhost:9080"
- checkAppURL $appURL
- up=`echo $result | grep Failed!`
- if [[ ! -z $up ]]; then
-    stopRun
-    cleanup 12
-    exit 12
- fi
+   STACK_loc=test_$STACK
+   mkdir $STACK_loc
+   if [[ $? -ne 0 ]]; then
+     echo "unable to create location to install STACK, exiting"
+     exit 12
+   fi
 
- stopRun
-
- echo "Issuing appsody deploy"
- appsody deploy > deploy.log 2>&1 
- #####################################
- # give the apps some time to start 
- #####################################
- sleep 15
- serverStarted=`tail deploy.log | grep "Deployed project running at "`
-
- if [[ -z $serverStarted ]]; then
-   echo "Server failed to start  Test Failed!!!!!"
-   appsody deploy delete
-   cleanup 12
-   exit 12
- fi
- getDeployedURL $serverStarted
-
- echo " "
- echo "*********************************"
- echo "       Kubernetes Deployments    "
- kubectl get all
- echo "*********************************"
- echo " "
- echo "Checking Health status with URL $url"
- echo " "
- checkHealthURL $url
- up=`echo $result | grep Failed!`
-  if [[ ! -z $up ]]; then
-    # appsody deploy delete
+   cd $STACK_loc
+   if [[ $? -ne 0 ]]; then
+     echo "unable to cd to STACK install directory /tmp/$stack_loc, exiting"
+     exit 12
+   fi
+   ######################### 
+   # initialize the STACK  #
+   ########################
+   appsody init $repository/$STACK $TEMPLATE
+   if [[ $? -ne 0 ]]; then
+     echo "An error has occurred initializing the STACK, rc=$?"
+     echo  "\nTest Failed!!!!!!\n"
      cleanup 12
      exit 12
-  fi 
- echo "Checking appsody deploy app with $url"
- checkAppURL $url
- up=`echo $result | grep Failed!`
- if [[ ! -z $up ]]; then
-    echo  $up
-    #appsody deploy delete
-    cleanup 12
-    exit 12
- fi
- 
- #appsody deploy delete
+   fi
 
+   doRun
+   stopRun
+ 
+   echo "Issuing appsody deploy"
+   appsody deploy > deploy.log 2>&1 
+   #####################################
+   # give the apps some time to start 
+   #####################################
+   sleep 15
+   serverStarted=`tail deploy.log | grep "Deployed project running at "`
+
+   if [[ -z $serverStarted ]]; then
+     echo "Server failed to start  Test Failed!!!!!"
+     appsody deploy delete
+     cleanup 12
+     exit 12
+   fi
+   getDeployedURL $serverStarted
+
+   echo " "
+   echo "*********************************"
+   echo "       Kubernetes Deployments    "
+   kubectl get all
+   echo "*********************************"
+   echo " "
+   echo "Checking Health status with URL $url"
+   echo " "
+   checkHealthURL $url
+   up=`echo $result | grep Failed!`
+    if [[ ! -z $up ]]; then
+      # appsody deploy delete
+       cleanup 12
+       exit 12
+    fi 
+   echo "Checking appsody deploy app with $url"
+   checkAppURL $url
+   up=`echo $result | grep Failed!`
+   if [[ ! -z $up ]]; then
+      echo  $up
+      #appsody deploy delete
+      cleanup 12
+      exit 12
+   fi
+ 
+   appsody deploy delete
+ fi
  cleanup 0 
