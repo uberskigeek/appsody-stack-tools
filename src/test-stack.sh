@@ -5,12 +5,15 @@
 #######################
 
 checkAppURL() {
- echo "Issueing command = curl --dump-header - $1/starter/resource | grep \"200 OK"
+ if [[ -z $CONTEXT_ROOT ]]; then
+    CONTEXT_ROOT="/starter/resource"
+ fi
+ echo "Issueing command = curl --dump-header - $1$CONTEXT_ROOT | grep \"200 OK\""
  waitcount=1
  while [ $waitcount -le 300 ]
  do
   sleep 1
-  up=`curl --dump-header - $1/starter/resource | grep "200 OK"`
+  up=`curl --dump-header - $1$CONTEXT_ROOT | grep "200 OK"`
   if [[ -z $up ]]; then
     waitcount=$(( $waitcount + 1 ))
   else
@@ -76,7 +79,7 @@ cleanup() {
       rm -r $STACK_loc
       echo "Test of STACK completed Successfully!!!!"
     else
-      echo "Test of STACK failed!! Results can be found in $stack_loc"    
+      echo "Test of STACK failed!! Results can be found in $STACK_loc"    
     fi
 }
 
@@ -162,7 +165,7 @@ doRun() {
   echo "Server has started" 
   healthURL="http://localhost:9080"
   checkHealthURL $healthURL
-  failed=`echo $results | grep Failed!`
+  failed=`echo $result | grep "Failed!"`
   if [[ ! -z $failed ]]; then
     stopRun 
     cleanup 12
@@ -189,6 +192,8 @@ doRun() {
 
 TEMPLATE=""
 GIT_REPO=""
+BRANCH=""
+CONTEXT_ROOT=""
 
 while [[ $# -gt 0 ]]
 do
@@ -211,6 +216,16 @@ case $key in
     ;;
     -t|--template)
     TEMPLATE="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -b|--branch)
+    BRANCH="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -c|--contextRoot)
+    CONTEXT_ROOT="$2"
     shift # past argument
     shift # past value
     ;;
@@ -242,7 +257,11 @@ fi
        echo "git is not installed on this server, Please install git and try again"
        exit 12
     fi
-    gitCloneResults=`git clone $GIT_REPO`
+    if [[ -z $BRANCH ]]; then
+      gitCloneResults=`git clone $GIT_REPO`
+    else
+      gitCloneResults=`git clone --single-branch --branch $BRANCH $GIT_REPO` 
+    fi
     STACK_loc=`echo $GIT_REPO |  awk '{split($0,a,"/"); print a[2]}' | awk '{split($0,a,"."); print a[1]}'`
     if [[ -z $STACK_loc ]] || [[ ! -d $STACK_loc ]]; then
       echo "Failure creating git repo: $gitCloneResults"
@@ -252,11 +271,20 @@ fi
     appsodyProjects=`find ./ -name .appsody-config.yaml`
     for project in $appsodyProjects
      do
-       project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/.appsody-config.yaml"); print a[1]}'`   
-       cd $project
-       echo "Appsody run for project at $project"
-       doRun
-       stopRun
+       appsodyConfig=.appsody-config.yaml
+       project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
+       echo "|$project| |$appsodyConfig|"
+       if [ $project != $appsodyConfig ]; then
+          cd $project
+       fi
+       project_loc=`pwd`
+       echo "Appsody run for project at $project_loc"
+       if [[ ! -f ".appsody-nolocal" ]]; then
+         doRun
+         stopRun
+       else 
+         echo "$project is a binary project run will be skipped"
+       fi
        cd - 
      done
  else
