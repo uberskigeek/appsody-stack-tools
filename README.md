@@ -22,13 +22,17 @@ When cloning git repositories they will be cloned to */tmp/gitRepositoryName*
 - -s or --stack - the name of the stack to use.
 - -t or --template - the name of the template to use if none is defined the
 default will be used.
+
 example: `./test-stack.sh -a appsody-hub -s java-openliberty -t default`
+
 ### Using a project from a git repository
 - -g or --gitrepo - the git repository you want to clone (copied from the clone
    repository button on github)
 - -b or --branch - the specific branch of the repo you'd like to copy. This is
   optional
+
 example `./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git -b alternate`
+
 ### Options available for either of the above cases
 - -c or --contextRoot - When testing the application this value will be used to
 contact the application. It is expected that a response code of 200 will be
