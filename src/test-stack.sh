@@ -8,7 +8,7 @@ checkAppURL() {
  if [[ -z $CONTEXT_ROOT ]]; then
     CONTEXT_ROOT="/starter/resource"
  fi
- echo "Issueing command = curl --dump-header - $1$CONTEXT_ROOT | grep \"200 OK\""
+ echo "Checking app URL with $1$CONTEXT_ROOT"
  waitcount=1
  while [ $waitcount -le 300 ]
  do
@@ -25,20 +25,21 @@ checkAppURL() {
   else
     result="Test of application URL indicates it is up"
   fi
+  echo " "
   echo $result
+  echo " "
 }
 ######################
 # Check health url
 #####################
 checkHealthURL() {
-  echo "Issuing command = curl $1/health | jq -c '[. | {status: .status}]' | grep \"UP\""
 
+ echo "Checking Health with URL $1/health" 
  waitcount=1
  while [ $waitcount -le 300 ]
   do
     sleep 1 
     up=`curl $1/health | jq -c '[. | {status: .status}]' | grep "UP"`
-    echo "up = $up"
     if [[ -z $up ]]; then
        waitcount=$(( $waitcount + 1 ))
     else
@@ -50,8 +51,9 @@ checkHealthURL() {
   else
     result="Health status indicates the application is up"
   fi
-
+  echo " "
   echo $result
+  echo " "
 }
 
 #####################
@@ -99,7 +101,7 @@ stopRun() {
 # Validate Parms are correct.
 #########################################
 checkParms() {
-
+   # GIT repo parm takes precedence
    if [[ ! -z $GIT_REPO ]]; then
       APPSODY_REPO=""
       STACK=""
@@ -125,11 +127,19 @@ checkParms() {
 invalidArgs() {
   echo "Command syntax to initialize and test an appsody project:"
   echo "test-stack.sh -a appsodyRepo -s appsodyStack -t appsodyTemplate"
-  echo " or to test a git repository containing one or more Appsody Projects:"
-  echo "test-stack.sh -g gitRepository"
-  echo " gitRepository is mutually exclusive with the other arguments. "
-  echo " If a combination of both are specified the script will exit with an error"
-  echo " appsodyTemplate is optional "
+  echo " The -t appsodyTemplate is optional and only applicable when using -a and -s "
+  echo " "
+  echo "Command syntax to test a git repository containing one or more Appsody Projects:"
+  echo "test-stack.sh -g gitRepository -b branch"
+  echo " -g gitRepository and -b branch are  mutually exclusive with the other arguments. "
+  echo " -b branch is an optional and only applicable when using -g "
+  echo " "
+  echo " If a combination of mutually exclusive options are provided the -g and -b options will "
+  echo " take precedence and the other options will be ignored "
+  echo " "
+  echo " The option -c contextRoot is available for all options it specifies the context root for the "
+  echo " application URL that will be tested. If not specified a default value of /starter/resource will be used"
+  echo " "
 }
 
 doRun() {
@@ -148,7 +158,6 @@ doRun() {
      serverStarted=`cat run.log | grep "server is ready to run a smarter planet"`
      if [[ ! -z $serverStarted ]]; then
         waitcount=301
-        echo "\nServer Has Started\n"
      else
         waitcount=$(( $waitcount + 1 ))
      fi
@@ -156,7 +165,9 @@ doRun() {
  
   if [[ -z $serverStarted ]]; then
     echo "Server has not successfully started in 6 minutes"
-    echo  "\nTest Failed!!!!!!\n"
+    echo " "
+    echo "Test Failed!!!!!!"
+    echo " "
     stopRun
     cleanup 12
     exit 12
@@ -185,6 +196,48 @@ doRun() {
   fi
 }
 
+doDeploy() {
+    echo "Issuing appsody deploy"
+    appsody deploy > deploy.log 2>&1
+    #####################################
+    # give the apps some time to start
+    #####################################
+    sleep 30
+    serverStarted=`tail deploy.log | grep "Deployed project running at "`
+ 
+    if [[ -z $serverStarted ]]; then
+      echo "Server failed to start  Test Failed!!!!!"
+      appsody deploy delete
+      cleanup 12
+      exit 12
+    fi
+    getDeployedURL $serverStarted
+ 
+    echo " "
+    echo "*********************************"
+    echo "       Kubernetes Deployments    "
+    echo "*********************************"
+    kubectl get all
+    echo "*********************************"
+    echo " "
+    echo " "
+    checkHealthURL $url
+    up=`echo $result | grep Failed!`
+     if [[ ! -z $up ]]; then
+        appsody deploy delete
+        cleanup 12
+        exit 12
+     fi
+    checkAppURL $url
+    up=`echo $result | grep Failed!`
+    if [[ ! -z $up ]]; then
+       appsody deploy delete
+       cleanup 12
+       exit 12
+    fi
+ 
+    appsody deploy delete
+}
 #############
 ## Main
 ############
@@ -194,6 +247,8 @@ TEMPLATE=""
 GIT_REPO=""
 BRANCH=""
 CONTEXT_ROOT=""
+STACK=""
+APPSODY_REPO=""
 
 while [[ $# -gt 0 ]]
 do
@@ -236,6 +291,13 @@ case $key in
 esac
 done
 
+echo "git repo     = $GIT_REPO"
+echo "branch       = $BRANCH"
+echo "appsody repo = $APPSODY_REPO"
+echo "stack        = $STACK"
+echo "template     = $TEMPLATE"
+echo "context root = $CONTEXT_ROOT"
+
 checkParms
 
 appsodyNotInstalled=`appsody version | grep "command not found"`
@@ -273,7 +335,6 @@ fi
      do
        appsodyConfig=.appsody-config.yaml
        project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
-       echo "|$project| |$appsodyConfig|"
        if [ $project != $appsodyConfig ]; then
           cd $project
        fi
@@ -282,20 +343,21 @@ fi
        if [[ ! -f ".appsody-nolocal" ]]; then
          doRun
          stopRun
+         doDeploy
        else 
          echo "$project is a binary project run will be skipped"
+         doDeploy
        fi
        cd - 
      done
  else
-
-   repoExists=`appsody repo list | grep $repository`
+   repoExists=`appsody repo list | grep $APPSODY_REPO`
    if [[ ! $repoExists ]]; then
-     echo "repo $repository is not available, please select a valid repository"
+     echo "repo $APPSODY_REPO is not available, please select a valid repository"
      exit 12
    fi
  
-   STACKInRepo=`appsody list | grep $stack | grep $repository`
+   STACKInRepo=`appsody list | grep $STACK | grep $APPSODY_REPO`
    if [[ ! STACKInRepo ]]; then
       echo "Stack $STACK is not available in repo $repo. Please select valid stack"
       exit 12
@@ -316,58 +378,15 @@ fi
    ######################### 
    # initialize the STACK  #
    ########################
-   appsody init $repository/$STACK $TEMPLATE
+   appsody init $APPSODY_REPO/$STACK $TEMPLATE
    if [[ $? -ne 0 ]]; then
      echo "An error has occurred initializing the STACK, rc=$?"
-     echo  "\nTest Failed!!!!!!\n"
      cleanup 12
      exit 12
    fi
 
    doRun
    stopRun
- 
-   echo "Issuing appsody deploy"
-   appsody deploy > deploy.log 2>&1 
-   #####################################
-   # give the apps some time to start 
-   #####################################
-   sleep 15
-   serverStarted=`tail deploy.log | grep "Deployed project running at "`
-
-   if [[ -z $serverStarted ]]; then
-     echo "Server failed to start  Test Failed!!!!!"
-     appsody deploy delete
-     cleanup 12
-     exit 12
-   fi
-   getDeployedURL $serverStarted
-
-   echo " "
-   echo "*********************************"
-   echo "       Kubernetes Deployments    "
-   kubectl get all
-   echo "*********************************"
-   echo " "
-   echo "Checking Health status with URL $url"
-   echo " "
-   checkHealthURL $url
-   up=`echo $result | grep Failed!`
-    if [[ ! -z $up ]]; then
-      # appsody deploy delete
-       cleanup 12
-       exit 12
-    fi 
-   echo "Checking appsody deploy app with $url"
-   checkAppURL $url
-   up=`echo $result | grep Failed!`
-   if [[ ! -z $up ]]; then
-      echo  $up
-      #appsody deploy delete
-      cleanup 12
-      exit 12
-   fi
- 
-   appsody deploy delete
+   doDeploy 
  fi
  cleanup 0 
