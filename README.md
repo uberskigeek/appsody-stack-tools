@@ -40,4 +40,4 @@ will take precedence and the other options will be ignored.
 The test script requires jq to be installed
 - for Mac brew install jq
 - for linux apt-get install jq
-- for Red has yum install jq
+- for Red hat yum install jq
