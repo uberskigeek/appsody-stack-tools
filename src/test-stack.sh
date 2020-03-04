@@ -75,9 +75,14 @@ checkHealthURL() {
 getDeployedURL() {
    oldIFS=$IFS
    IFS=' '
+   echo
    for x in $serverStarted
     do
        url=`echo $x | grep http`
+       # on linux localhost is dropped from the URL so we need to 
+       # put it back.
+       port=`echo $url | awk '{split($0,a,":"); print  a[3]}'`
+       url="http://localhost:$port"
     done
     IFS=$oldIFS
 }
