@@ -17,29 +17,33 @@
 #######################
 
 checkAppURL() {
- if [[ -z $CONTEXT_ROOT ]]; then
-    CONTEXT_ROOT="/starter/resource"
- fi
- echo "Checking app URL with $1$CONTEXT_ROOT"
- waitcount=1
- while [ $waitcount -le 300 ]
- do
-  sleep 1
-  up=`curl --dump-header - $1$CONTEXT_ROOT | grep "200 OK"`
-  if [[ -z $up ]]; then
-    waitcount=$(( $waitcount + 1 ))
-  else
-   waitcount=301
+ if [[ $CONTEXT_ROOT != "NONE" ]]; then
+   if [[ -z $CONTEXT_ROOT ]]; then
+      CONTEXT_ROOT="/starter/resource"
+   fi
+   echo "Checking app URL with $1$CONTEXT_ROOT"
+   waitcount=1
+   while [ $waitcount -le 300 ]
+   do
+    sleep 1
+    up=`curl --dump-header - $1$CONTEXT_ROOT | grep "200 OK"`
+    if [[ -z $up ]]; then
+      waitcount=$(( $waitcount + 1 ))
+    else
+     waitcount=301
+    fi
+   done
+    if [[ -z $up ]]; then
+      result="Test of application URL indicates it is NOT up, Test Failed!!!!!!"
+    else
+      result="Test of application URL indicates it is up"
+    fi
+    echo " "
+    echo $result
+    echo " "
+  else 
+    echo "Application context set to none, skipping application URL test"
   fi
- done
-  if [[ -z $up ]]; then
-    result="Test of application URL indicates it is NOT up, Test Failed!!!!!!"
-  else
-    result="Test of application URL indicates it is up"
-  fi
-  echo " "
-  echo $result
-  echo " "
 }
 ######################
 # Check health url
@@ -47,25 +51,30 @@ checkAppURL() {
 checkHealthURL() {
 
  echo "Checking Health with URL $1/health" 
- waitcount=1
- while [ $waitcount -le 300 ]
-  do
-    sleep 1 
-    up=`curl $1/health | jq -c '[. | {status: .status}]' | grep "UP"`
+ echo "TEST_HEALTH=$TEST_HEALTH"
+ if [[ $TEST_HEALTH == "Y" ]]; then
+   waitcount=1
+   while [ $waitcount -le 300 ]
+    do
+      sleep 1 
+      up=`curl $1/health | jq -c '[. | {status: .status}]' | grep "UP"`
+      if [[ -z $up ]]; then
+         waitcount=$(( $waitcount + 1 ))
+      else
+         waitcount=301
+      fi
+    done
     if [[ -z $up ]]; then
-       waitcount=$(( $waitcount + 1 ))
+      result="Health Status indicates the application is NOT up, Test Failed!!!!!!"
     else
-       waitcount=301
+      result="Health status indicates the application is up"
     fi
-  done
-  if [[ -z $up ]]; then
-    result="Health Status indicates the application is NOT up, Test Failed!!!!!!"
-  else
-    result="Health status indicates the application is up"
-  fi
-  echo " "
-  echo $result
-  echo " "
+    echo " "
+    echo $result
+    echo " "
+ else
+    echo "--testHealth set to $TEST_HEALTH, Skipping health check"
+ fi
 }
 
 #####################
@@ -113,6 +122,11 @@ stopRun() {
    runId=`echo $runId | head -n1 | awk '{print $2;}'`
    echo "Stopping appsody runid $runId"
    kill $runId
+   sleep 5
+   buildSuccess=`cat run.log | grep "BUILD SUCCESS"`
+   if [[ -z buildSuccess ]]; then
+       echo "Tests did not sucessfully complete test Failed!!!!!"
+   fi
 }
 #########################################
 # Validate Parms are correct.
@@ -156,6 +170,9 @@ invalidArgs() {
   echo " "
   echo " The option -c contextRoot is available for all options it specifies the context root for the "
   echo " application URL that will be tested. If not specified a default value of /starter/resource will be used"
+  echo " " 
+  echo " The option -h healthcheck is available for all options it specifies if the microprofile health URL should be"
+  echo " tested. This defaults to true if not specified. It will be false if any value other than Y is provided."
   echo " "
 }
 
@@ -266,6 +283,7 @@ BRANCH=""
 CONTEXT_ROOT=""
 STACK=""
 APPSODY_REPO=""
+TEST_HEALTH="Y"
 
 while [[ $# -gt 0 ]]
 do
@@ -298,6 +316,11 @@ case $key in
     ;;
     -c|--contextRoot)
     CONTEXT_ROOT="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -h|--health)
+    TEST_HEALTH="$2"
     shift # past argument
     shift # past value
     ;;
@@ -341,32 +364,38 @@ fi
     else
       gitCloneResults=`git clone --single-branch --branch $BRANCH $GIT_REPO` 
     fi
-    STACK_loc=`echo $GIT_REPO |  awk '{split($0,a,"/"); print a[2]}' | awk '{split($0,a,"."); print a[1]}'`
+    STACK_loc=`echo $GIT_REPO |  awk '{split($0,a,"/"); print a[2]}' | awk '{split($0,a,".git"); print a[1]}'`
     if [[ -z $STACK_loc ]] || [[ ! -d $STACK_loc ]]; then
       echo "Failure creating git repo: $gitCloneResults"
       exit 12
     fi
     cd $STACK_loc
     appsodyProjects=`find ./ -name .appsody-config.yaml`
-    for project in $appsodyProjects
-     do
-       appsodyConfig=.appsody-config.yaml
-       project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
-       if [ $project != $appsodyConfig ]; then
-          cd $project
-       fi
-       project_loc=`pwd`
-       echo "Appsody run for project at $project_loc"
-       if [[ ! -f ".appsody-nolocal" ]]; then
-         doRun
-         stopRun
-         doDeploy
-       else 
-         echo "$project is a binary project run will be skipped"
-         doDeploy
-       fi
-       cd - 
-     done
+    if [ ! -z $appsodyProjects ]; then
+     for project in $appsodyProjects
+      do
+        appsodyConfig=.appsody-config.yaml
+        project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
+        if [ $project != $appsodyConfig ]; then
+           cd $project
+        fi
+        project_loc=`pwd`
+        echo "Appsody run for project at $project_loc"
+        if [[ ! -f ".appsody-nodev" ]]; then
+          doRun
+          stopRun
+          doDeploy
+        else 
+          echo "$project is a binary project run will be skipped"
+          doDeploy
+        fi
+        cd - 
+      done
+    else
+        echo "ERROR: no appsody  projects in repo"
+        cleanup 12
+        exit 12 
+    fi
  else
    repoExists=`appsody repo list | grep $APPSODY_REPO`
    if [[ ! $repoExists ]]; then
