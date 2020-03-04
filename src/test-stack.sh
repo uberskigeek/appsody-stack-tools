@@ -1,5 +1,17 @@
 #!/bin/bash
 
+#################################
+# Test script for testing appsody stacks
+# Will either init a new project from a stack
+# or clone a git repository containing one or more appsody
+# projects initialized from a stack. 
+# in either case an appsody run and an appsody deploy
+# are run against the stack. The application's URL is
+# then tested along with the heath URL provided by MP Metrics 
+# if they can be accessed and provide correct results
+# the test's pass.
+##################################
+
 #######################
 # Check Application URL
 #######################
