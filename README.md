@@ -31,7 +31,7 @@ example: `./test-stack.sh -a appsody-hub -s java-openliberty -t default`
 - -b or --branch - the specific branch of the repo you'd like to copy. This is
   optional
 
-example `./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git -b alternate`
+example: `./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git -b alternate`
 
 ### Options available for either of the above cases
 - -c or --contextRoot - When testing the application this value will be used to
