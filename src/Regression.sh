@@ -10,20 +10,28 @@
 check_results() {
  results=`cat test.log | grep "Test of STACK completed Successfully!!!!"`
  if [[ -z $results ]]; then
-   echo "Test of $1 stack failed!"
-   mv test.log $1_test.log
+   echo " "
+   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!"
+   echo "Test of $1  failed!"
+   echo "Log can be viewed at /tmp/$1/test.log"
+   echo "!!!!!!!!!!!!!!!!!!!!!!!!!"
+   echo " "
  else
-   echo "Test of $1 stack completed Successfully!"
+   echo " "
+   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!"
+   echo "Test of $1 completed Successfully!"
+   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!"
+   echo " "
  fi
 }
 
 ./test-stack.sh -g git@github.com:uberskigeek/AppsodyBinaryProjectTest.git -c /TangoApp_war/ -h N > test.log
-check_results BinaryStack
+check_results AppsodyBinaryProjectTest
 
 ./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git > test.log
-check_results PrebuiltStack
+check_results appsody-projects
 
 ./test-stack.sh -a dev.local -s java-openliberty > test.log
-check_results InitRunAndBuild
+check_results test_java-openliberty
 
 

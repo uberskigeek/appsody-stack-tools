@@ -49,6 +49,9 @@ example: `./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git -b 
 - -c or --contextRoot - When testing the application this value will be used to
 contact the application. It is expected that a response code of 200 will be
 received when the application is available.
+- -h or --health - If the application being tested does not implement the microprofile
+health api then add this parameter with a value of N. This will skip the test
+checking the health api. 
 
 ### Mutual exclusivity
 If -a, -s, or -t are used along with -g and -b then the -g and -b parameters
