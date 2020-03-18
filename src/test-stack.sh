@@ -100,7 +100,6 @@ getDeployedURL() {
 # Clean up after run
 #########################
 cleanup() {
-
     if [ $1 -eq 0 ]; then
       cd /tmp
       chmod -R 777 $STACK_loc
@@ -111,12 +110,27 @@ cleanup() {
     fi
 }
 
+#########################################
+# Docker run is started in the background
+# use this to stop the runing container 
+#########################################
+stopDockerRun() {
+    echo "Stopping docker run for container $1"
+    docker container stop $1
+    if [[ $? != 0 ]]; then
+        echo "Error attempting to stop docker container $1"
+    fi
+    docker container rm $1
+    if [[ $? != 0 ]]; then
+       echo "Error removing container $1"
+    fi
+}
 
 ##########################################
 # Appsody run is started in the background
 # Use this to find the process and stop it
 ##########################################
-stopRun() {
+stopAppsodyRun() {
 
    runId=`ps -ef | grep "appsody run" | grep -v grep`
    runId=`echo $runId | head -n1 | awk '{print $2;}'`
@@ -202,7 +216,7 @@ doRun() {
     echo " "
     echo "Test Failed!!!!!!"
     echo " "
-    stopRun
+    stopAppsodyRun
     cleanup 12
     exit 12
   fi
@@ -212,7 +226,7 @@ doRun() {
   checkHealthURL $healthURL
   failed=`echo $result | grep "Failed!"`
   if [[ ! -z $failed ]]; then
-    stopRun 
+    stopAppsodyRun 
     cleanup 12
     exit 12
   fi
@@ -224,12 +238,68 @@ doRun() {
   checkAppURL $appURL
   up=`echo $result | grep Failed!`
   if [[ ! -z $up ]]; then
-     stopRun 
+     stopAppsodyRun 
      cleanup 12
      exit 12
   fi
 }
+#############################
+# Run this instead of doDeploy
+# Will do an appsody build then 
+# Docker run with the resulting image
+# More stable on Linux and Mac
+############################
+doBuildandRun() {
+    echo "Doing Appsody  build and Docker run"
+    appsody build > build.log
+    if [[ $? != 0 ]]; then
+      echo "Error executing appsody build "
+      cleanup 12
+      exit 12 
+    fi
+    dockerImage=`cat build.log | grep "Built docker image" | awk '{print $NF}'`
+    echo "Running docker image $dockerImage"
+    if [[ -z $dockerImage ]]; then
+      echo "Docker image $dockerImage not found... exiting"
+      cleanup 12 
+      exit 12
+    else
+      docker container run --name $1br -d -p 9080:9080 -p 9444:9443 $dockerImage
+      if [[ $? != 0 ]]; then
+        echo "Error issuing docker container run.. Test Failed!!!!!"
+        stopDockerRun $1br
+        cleanup 12 
+        exit 12
+      else
+        healthURL="http://localhost:9080"
+        checkHealthURL $healthURL
+        failed=`echo $result | grep "Failed!"`
+        if [[ ! -z $failed ]]; then 
+          stopDockerRun $1br
+          cleanup 12 
+          exit 12 
+        fi
+        appURL="http://localhost:9080"
+        checkAppURL $appURL
+        up=`echo $result | grep Failed!`
+        if [[ ! -z $up ]]; then 
+           stopDockerRun $1br 
+           cleanup 12
+           exit 12 
+        else
+           stopDockerRun $1br
+           cleanup 0 
+        fi
+      fi
+    fi
+}
 
+####################################
+# Not currently being called. 
+# This does not work in a linux environment
+# Saving it because it does work on a Mac
+# May resurect later
+###################################
 doDeploy() {
     echo "Issuing appsody deploy"
     appsody deploy > deploy.log 2>&1
@@ -374,22 +444,36 @@ fi
     if [ ! -z $appsodyProjects ]; then
      for project in $appsodyProjects
       do
+        ########### Debug #######
+        echo "current project = $project"
+        
         appsodyConfig=.appsody-config.yaml
-        project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
-        if [[ $project != $appsodyConfig ]]; then
-           cd $project
+        projectLoc=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
+        if [[ ! -z $projectLoc ]] && [[ $projectLoc != $appsodyConfig ]]; then
+           cd $projectLoc
         fi
         project_loc=`pwd`
-        echo "Appsody run for project at $project_loc"
+        baseName=`basename $project_loc`
+        echo "Appsody tsting project at $project_loc"
+        echo "Project base name = $baseName"
         if [[ ! -f ".appsody-nodev" ]]; then
           doRun
-          stopRun
-          doDeploy
+          stopAppsodyRun
+          #doDeploy
+	  if [[ $CONTEXT_ROOT=="/starter/resource" ]]; then
+            doBuildandRun $baseName
+          else
+            doBuildandRun $CONTEXT_ROOT
+          fi
         else 
           echo "$project is a binary project run will be skipped"
-          doDeploy
+          #doDeploy
+          if [[ $CONTEXT_ROOT=="/starter/resource" ]]; then 
+             doBuildandRun $baseName
+          else 
+             doBuildAndRun $CONTEXT_ROOT
+          fi
         fi
-        cd - 
       done
     else
         echo "ERROR: no appsody  projects in repo"
@@ -409,7 +493,7 @@ fi
       exit 12
    fi
 
-   STACK_loc=test_$STACK
+   STACK_loc=test-$STACK
    mkdir $STACK_loc
    if [[ $? -ne 0 ]]; then
      echo "unable to create location to install STACK, exiting"
@@ -418,7 +502,7 @@ fi
 
    cd $STACK_loc
    if [[ $? -ne 0 ]]; then
-     echo "unable to cd to STACK install directory /tmp/$stack_loc, exiting"
+     echo "unable to cd to STACK install directory /tmp/$STACK_loc, exiting"
      exit 12
    fi
    ######################### 
@@ -432,7 +516,11 @@ fi
    fi
 
    doRun
-   stopRun
-   doDeploy 
+   stopAppsodyRun
+   if [[ $CONTEXT_ROOT=="/starter/resource" ]]; then
+     doBuildandRun $STACK_loc
+   else
+     doBuildandRun $CONTEXT_ROOT
+   fi
+   cleanup 0
  fi
- cleanup 0 
