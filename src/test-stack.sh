@@ -376,7 +376,7 @@ fi
       do
         appsodyConfig=.appsody-config.yaml
         project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
-        if [ $project != $appsodyConfig ]; then
+        if [[ $project != $appsodyConfig ]]; then
            cd $project
         fi
         project_loc=`pwd`
