@@ -1,10 +1,22 @@
 # appsody-stack-tools
-This currently consists of the test_stack.sh script. This script runs tests in
-two different scenarios.
-First it can initialize a project with an appsody stack then do an appsody run
-checking the health URL for a status of up and an application URL that provides
-a response code of 200 when successful. This will then be followed with an
-appsody deploy testing the same URLs albeit at different ports.  
+This repository contains tools to allow the regression test of the java-openliberty
+Appsody stack. It consists of 2 scripts Regression.sh and test_stack.sh.
+Regression.sh is a wrapper script that calls test_stack.sh. Regression.sh utilizes
+two repositories to test projects that were built on previous versions of the
+stack along with creating a new project from the default template and verifying
+it's validity. It is assumed that a local copy of the stack is available.
+
+The repositories utilized are:
+https://github.com/uberskigeek/AppsodyBinaryProjectTest - This is a project
+initialized with a binary application (read no source code)
+https://github.com/uberskigeek/appsody-projects - This is a project that was
+initialized with the default template
+
+The test_stack.sh script allows you to run against a project that can come from
+two different scenarios. First it can initialize a project with an appsody stack
+then do an appsody run checking the health URL for a status of up and an application
+URL that provides a response code of 200 when successful. This will then be followed
+with an appsody deploy testing the same URLs albeit at different ports.  
 Second it can take a git repository containing one or more projects that were
 created using appsody init and run the same tests against each of the appsody
 projects in the repository. Any project that contains the file .appsody-nolocal
