@@ -131,12 +131,15 @@ stopDockerRun() {
 # Use this to find the process and stop it
 ##########################################
 stopAppsodyRun() {
-
-   runId=`ps -ef | grep "appsody run" | grep -v grep`
-   runId=`echo $runId | head -n1 | awk '{print $2;}'`
-   echo "Stopping appsody runid $runId"
-   kill $runId
-   sleep 5
+   #runId=`ps -ef | grep -P "appsody$" | grep -v grep`
+   #runId=`echo $runId | head -n1 | awk '{print $2;}'`
+   dockerPS
+   lastContainerId=$(docker ps -lq)
+   echo "Stopping Docker container: $lastContainerId"
+   docker stop $lastContainerId
+   echo "Stopped"
+   dockerPS
+   sleep 3
    buildSuccess=`cat run.log | grep "BUILD SUCCESS"`
    if [[ -z buildSuccess ]]; then
        echo "Tests did not sucessfully complete test Failed!!!!!"
@@ -243,6 +246,21 @@ doRun() {
      exit 12
   fi
 }
+
+#############################
+# Print debugging
+############################
+dockerPS() {
+     # Spit out docker ps for possible collisions
+     echo
+     echo "WARNING: Since running containers may conflict with test, we will list any below.  (TODO: detect)"
+     echo
+     docker ps
+     echo
+     echo "=================================================="
+     echo
+}
+
 #############################
 # Run this instead of doDeploy
 # Will do an appsody build then 
@@ -264,7 +282,8 @@ doBuildandRun() {
       cleanup 12 
       exit 12
     else
-      docker container run --name $1br -d -p 9080:9080 -p 9444:9443 $dockerImage
+      # cleanup container.. or if it's helpful for debugging let's find another way
+      docker container run --rm --name $1br -d -p 9080:9080 -p 9444:9443 $dockerImage
       if [[ $? != 0 ]]; then
         echo "Error issuing docker container run.. Test Failed!!!!!"
         stopDockerRun $1br
@@ -416,6 +435,7 @@ if [[ ! -z $appsodyNotInstalled ]]; then
   echo "appsody is not installed Please install appsody and try again"
   exit 12
 fi 
+ dockerPS
 
  # create a location for the STACK to be initialized
  cd /tmp
@@ -522,5 +542,4 @@ fi
    else
      doBuildandRun $CONTEXT_ROOT
    fi
-   cleanup 0
  fi
