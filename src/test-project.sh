@@ -17,16 +17,16 @@
 #######################
 
 checkAppURL() {
- if [[ $CONTEXT_ROOT != "NONE" ]]; then
-   if [[ -z $CONTEXT_ROOT ]]; then
-      CONTEXT_ROOT="/starter/resource"
+ if [[ $URL_PATH != "NONE" ]]; then
+   if [[ -z $URL_PATH ]]; then
+      URL_PATH="/starter/resource"
    fi
-   echo "Checking app URL with $1$CONTEXT_ROOT"
+   echo "Checking app URL with $1$URL_PATH"
    waitcount=1
    while [ $waitcount -le 300 ]
    do
     sleep 1
-    up=`curl --dump-header - $1$CONTEXT_ROOT | grep "200 OK"`
+    up=`curl --dump-header - $1$URL_PATH | grep "200 OK"`
     if [[ -z $up ]]; then
       waitcount=$(( $waitcount + 1 ))
     else
@@ -174,18 +174,18 @@ checkParms() {
 ##########################################
 invalidArgs() {
   echo "Command syntax to initialize and test an appsody project:"
-  echo "test-stack.sh -a appsodyRepo -s appsodyStack -t appsodyTemplate"
+  echo "test-project.sh -a appsodyRepo -s appsodyStack -t appsodyTemplate"
   echo " The -t appsodyTemplate is optional and only applicable when using -a and -s "
   echo " "
   echo "Command syntax to test a git repository containing one or more Appsody Projects:"
-  echo "test-stack.sh -g gitRepository -b branch"
+  echo "test-project.sh -g gitRepository -b branch"
   echo " -g gitRepository and -b branch are  mutually exclusive with the other arguments. "
   echo " -b branch is an optional and only applicable when using -g "
   echo " "
   echo " If a combination of mutually exclusive options are provided the -g and -b options will "
   echo " take precedence and the other options will be ignored "
   echo " "
-  echo " The option -c contextRoot is available for all options it specifies the context root for the "
+  echo " The option -p path is available for all options it specifies the URL path for the "
   echo " application URL that will be tested. If not specified a default value of /starter/resource will be used"
   echo " " 
   echo " The option -h healthcheck is available for all options it specifies if the microprofile health URL should be"
@@ -197,7 +197,7 @@ doRun() {
  ###########################
  # do a run from this STACK #
  ############################
-  appsody run -p 9444:9443  > run.log &
+  appsody run -p $HTTPS_HOST_PORT:$HTTPS_PORT  > run.log &
  
   waitMessage="Waiting for server to start"
   waitcount=1
@@ -225,7 +225,7 @@ doRun() {
   fi
 
   echo "Server has started" 
-  healthURL="http://localhost:9080"
+  healthURL="http://localhost:$HTTP_PORT"
   checkHealthURL $healthURL
   failed=`echo $result | grep "Failed!"`
   if [[ ! -z $failed ]]; then
@@ -237,7 +237,7 @@ doRun() {
  ################
  # Check app url
  ###############
-  appURL="http://localhost:9080"
+  appURL="http://localhost:$HTTP_PORT"
   checkAppURL $appURL
   up=`echo $result | grep Failed!`
   if [[ ! -z $up ]]; then
@@ -283,14 +283,14 @@ doBuildandRun() {
       exit 12
     else
       # cleanup container.. or if it's helpful for debugging let's find another way
-      docker container run --rm --name $1br -d -p 9080:9080 -p 9444:9443 $dockerImage
+      docker container run --rm --name $1br -d -p $HTTP_PORT:$HTTP_PORT -p $HTTPS_HOST_PORT:$HTTPS_PORT $dockerImage
       if [[ $? != 0 ]]; then
         echo "Error issuing docker container run.. Test Failed!!!!!"
         stopDockerRun $1br
         cleanup 12 
         exit 12
       else
-        healthURL="http://localhost:9080"
+        healthURL="http://localhost:$HTTP_PORT"
         checkHealthURL $healthURL
         failed=`echo $result | grep "Failed!"`
         if [[ ! -z $failed ]]; then 
@@ -298,7 +298,7 @@ doBuildandRun() {
           cleanup 12 
           exit 12 
         fi
-        appURL="http://localhost:9080"
+        appURL="http://localhost:$HTTP_PORT"
         checkAppURL $appURL
         up=`echo $result | grep Failed!`
         if [[ ! -z $up ]]; then 
@@ -369,10 +369,13 @@ doDeploy() {
 TEMPLATE=""
 GIT_REPO=""
 BRANCH=""
-CONTEXT_ROOT=""
+URL_PATH=""
 STACK=""
 APPSODY_REPO=""
 TEST_HEALTH="Y"
+HTTP_PORT="9080"
+HTTPS_PORT="9443"
+HTTPS_HOST_PORT="9444"
 
 while [[ $# -gt 0 ]]
 do
@@ -403,8 +406,8 @@ case $key in
     shift # past argument
     shift # past value
     ;;
-    -c|--contextRoot)
-    CONTEXT_ROOT="$2"
+    -p|--path)
+    URL_PATH="$2"
     shift # past argument
     shift # past value
     ;;
@@ -425,7 +428,7 @@ echo "branch       = $BRANCH"
 echo "appsody repo = $APPSODY_REPO"
 echo "stack        = $STACK"
 echo "template     = $TEMPLATE"
-echo "context root = $CONTEXT_ROOT"
+echo "URL path     = $URL_PATH"
 
 checkParms
 
@@ -480,18 +483,18 @@ fi
           doRun
           stopAppsodyRun
           #doDeploy
-	  if [[ $CONTEXT_ROOT=="/starter/resource" ]]; then
+	  if [[ $URL_PATH=="/starter/resource" ]]; then
             doBuildandRun $baseName
           else
-            doBuildandRun $CONTEXT_ROOT
+            doBuildandRun $URL_PATH
           fi
         else 
           echo "$project is a binary project run will be skipped"
           #doDeploy
-          if [[ $CONTEXT_ROOT=="/starter/resource" ]]; then 
+          if [[ $URL_PATH=="/starter/resource" ]]; then 
              doBuildandRun $baseName
           else 
-             doBuildAndRun $CONTEXT_ROOT
+             doBuildAndRun $URL_PATH
           fi
         fi
       done
@@ -537,9 +540,9 @@ fi
 
    doRun
    stopAppsodyRun
-   if [[ $CONTEXT_ROOT=="/starter/resource" ]]; then
+   if [[ $URL_PATH=="/starter/resource" ]]; then
      doBuildandRun $STACK_loc
    else
-     doBuildandRun $CONTEXT_ROOT
+     doBuildandRun $URL_PATH
    fi
  fi

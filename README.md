@@ -1,10 +1,6 @@
 # appsody-stack-tools
 This repository contains tools to allow the regression test of the java-openliberty
-Appsody stack. It consists of 2 scripts Regression.sh and test_stack.sh.
-Regression.sh is a wrapper script that calls test_stack.sh. Regression.sh utilizes
-two repositories to test projects that were built on previous versions of the
-stack along with creating a new project from the default template and verifying
-it's validity. It is assumed that a local copy of the stack is available.
+Appsody stack. It consists of 2 scripts stack-regression.sh and test-project.sh. The stack-regression.sh script is a wrapper script that calls test-project.sh. The stack-regression.sh script utilizes two repositories to test projects that were built on previous versions of the stack along with creating a new project from the default template and verifying its validity. It is assumed that a local copy of the stack is available.
 
 The repositories utilized are:
 https://github.com/uberskigeek/AppsodyBinaryProjectTest - This is a project
@@ -12,7 +8,7 @@ initialized with a binary application (read no source code)
 https://github.com/uberskigeek/appsody-projects - This is a project that was
 initialized with the default template
 
-The test_stack.sh script allows you to run against a project that can come from
+The test-project.sh script allows you to run against a project that can come from
 two different scenarios. First it can initialize a project with an appsody stack
 then do an appsody run checking the health URL for a status of up and an application
 URL that provides a response code of 200 when successful. This will then be followed
@@ -28,14 +24,14 @@ When cloning git repositories they will be cloned to */tmp/gitRepositoryName*
 
 
 
-## test-stack.sh options
+## test-project.sh options
 ### Initializing a new project with an apposdy Stack
 - -a or --appsody_repo - the appsody repo the stack will be pulled from
 - -s or --stack - the name of the stack to use.
 - -t or --template - the name of the template to use if none is defined the
 default will be used.
 
-example: `./test-stack.sh -a appsody-hub -s java-openliberty -t default`
+example: `./test-project.sh -a incubator -s java-openliberty -t default`
 
 ### Using a project from a git repository
 - -g or --gitrepo - the git repository you want to clone (copied from the clone
@@ -43,10 +39,10 @@ example: `./test-stack.sh -a appsody-hub -s java-openliberty -t default`
 - -b or --branch - the specific branch of the repo you'd like to copy. This is
   optional
 
-example: `./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git -b alternate`
+example: `./test-project.sh -g git@github.com:uberskigeek/appsody-projects.git -b alternate`
 
 ### Options available for either of the above cases
-- -c or --contextRoot - When testing the application this value will be used to
+- -p or --path - When testing the application this value will be used to
 contact the application. It is expected that a response code of 200 will be
 received when the application is available.
 - -h or --health - If the application being tested does not implement the microprofile
