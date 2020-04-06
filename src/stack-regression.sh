@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #######################################################
-# Regression.sh
+# stack-regression.sh
 # The purpose of this script is to run different stack
 # project with different scenarios to attempt to regression
 # test any changes in the local repository
@@ -25,13 +25,13 @@ check_results() {
  fi
 }
 
-./test-stack.sh -g git@github.com:uberskigeek/AppsodyBinaryProjectTest.git -c /TangoApp_war/ -h N > test.log
+./test-project.sh -g git@github.com:uberskigeek/AppsodyBinaryProjectTest.git -p /TangoApp_war/ -h N > test.log
 check_results AppsodyBinaryProjectTest
 
-./test-stack.sh -g git@github.com:uberskigeek/appsody-projects.git > test.log
+./test-project.sh -g git@github.com:uberskigeek/appsody-projects.git > test.log
 check_results appsody-projects
 
-./test-stack.sh -a dev.local -s java-openliberty > test.log
+./test-project.sh -a dev.local -s java-openliberty > test.log
 check_results test_java-openliberty
 
 
