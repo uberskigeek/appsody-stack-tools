@@ -17,16 +17,16 @@
 #######################
 
 checkAppURL() {
- if [[ $CONTEXT_ROOT != "NONE" ]]; then
-   if [[ -z $CONTEXT_ROOT ]]; then
-      CONTEXT_ROOT="/starter/resource"
+ if [[ $URL_PATH != "NONE" ]]; then
+   if [[ -z $URL_PATH ]]; then
+      URL_PATH="/starter/resource"
    fi
-   echo "Checking app URL with $1$CONTEXT_ROOT"
+   echo "Checking app URL with $1$URL_PATH"
    waitcount=1
    while [ $waitcount -le 300 ]
    do
     sleep 1
-    up=`curl --dump-header - $1$CONTEXT_ROOT | grep "200 OK"`
+    up=`curl --dump-header - $1$URL_PATH | grep "200 OK"`
     if [[ -z $up ]]; then
       waitcount=$(( $waitcount + 1 ))
     else
@@ -100,7 +100,6 @@ getDeployedURL() {
 # Clean up after run
 #########################
 cleanup() {
-
     if [ $1 -eq 0 ]; then
       cd /tmp
       chmod -R 777 $STACK_loc
@@ -111,18 +110,36 @@ cleanup() {
     fi
 }
 
+#########################################
+# Docker run is started in the background
+# use this to stop the runing container 
+#########################################
+stopDockerRun() {
+    echo "Stopping docker run for container $1"
+    docker container stop $1
+    if [[ $? != 0 ]]; then
+        echo "Error attempting to stop docker container $1"
+    fi
+    #docker container rm $1
+    #if [[ $? != 0 ]]; then
+    #   echo "Error removing container $1"
+    #fi
+}
 
 ##########################################
 # Appsody run is started in the background
 # Use this to find the process and stop it
 ##########################################
-stopRun() {
-
-   runId=`ps -ef | grep "appsody run" | grep -v grep`
-   runId=`echo $runId | head -n1 | awk '{print $2;}'`
-   echo "Stopping appsody runid $runId"
-   kill $runId
-   sleep 5
+stopAppsodyRun() {
+   #runId=`ps -ef | grep -P "appsody$" | grep -v grep`
+   #runId=`echo $runId | head -n1 | awk '{print $2;}'`
+   dockerPS
+   lastContainerId=$(docker ps -lq)
+   echo "Stopping Docker container: $lastContainerId"
+   docker stop $lastContainerId
+   echo "Stopped"
+   dockerPS
+   sleep 3
    buildSuccess=`cat run.log | grep "BUILD SUCCESS"`
    if [[ -z buildSuccess ]]; then
        echo "Tests did not sucessfully complete test Failed!!!!!"
@@ -157,18 +174,18 @@ checkParms() {
 ##########################################
 invalidArgs() {
   echo "Command syntax to initialize and test an appsody project:"
-  echo "test-stack.sh -a appsodyRepo -s appsodyStack -t appsodyTemplate"
+  echo "test-project.sh -a appsodyRepo -s appsodyStack -t appsodyTemplate"
   echo " The -t appsodyTemplate is optional and only applicable when using -a and -s "
   echo " "
   echo "Command syntax to test a git repository containing one or more Appsody Projects:"
-  echo "test-stack.sh -g gitRepository -b branch"
+  echo "test-project.sh -g gitRepository -b branch"
   echo " -g gitRepository and -b branch are  mutually exclusive with the other arguments. "
   echo " -b branch is an optional and only applicable when using -g "
   echo " "
   echo " If a combination of mutually exclusive options are provided the -g and -b options will "
   echo " take precedence and the other options will be ignored "
   echo " "
-  echo " The option -c contextRoot is available for all options it specifies the context root for the "
+  echo " The option -p path is available for all options it specifies the URL path for the "
   echo " application URL that will be tested. If not specified a default value of /starter/resource will be used"
   echo " " 
   echo " The option -h healthcheck is available for all options it specifies if the microprofile health URL should be"
@@ -180,7 +197,7 @@ doRun() {
  ###########################
  # do a run from this STACK #
  ############################
-  appsody run -p 9444:9443  > run.log &
+  appsody run -p $HTTPS_HOST_PORT:$HTTPS_PORT  > run.log &
  
   waitMessage="Waiting for server to start"
   waitcount=1
@@ -202,17 +219,17 @@ doRun() {
     echo " "
     echo "Test Failed!!!!!!"
     echo " "
-    stopRun
+    stopAppsodyRun
     cleanup 12
     exit 12
   fi
 
   echo "Server has started" 
-  healthURL="http://localhost:9080"
+  healthURL="http://localhost:$HTTP_PORT"
   checkHealthURL $healthURL
   failed=`echo $result | grep "Failed!"`
   if [[ ! -z $failed ]]; then
-    stopRun 
+    stopAppsodyRun 
     cleanup 12
     exit 12
   fi
@@ -220,16 +237,88 @@ doRun() {
  ################
  # Check app url
  ###############
-  appURL="http://localhost:9080"
+  appURL="http://localhost:$HTTP_PORT"
   checkAppURL $appURL
   up=`echo $result | grep Failed!`
   if [[ ! -z $up ]]; then
-     stopRun 
+     stopAppsodyRun 
      cleanup 12
      exit 12
   fi
 }
 
+#############################
+# Print debugging
+############################
+dockerPS() {
+     # Spit out docker ps for possible collisions
+     echo
+     echo "WARNING: Since running containers may conflict with test, we will list any below.  (TODO: detect)"
+     echo
+     docker ps
+     echo
+     echo "=================================================="
+     echo
+}
+
+#############################
+# Run this instead of doDeploy
+# Will do an appsody build then 
+# Docker run with the resulting image
+# More stable on Linux and Mac
+############################
+doBuildandRun() {
+    echo "Doing Appsody  build and Docker run"
+    appsody build > build.log
+    if [[ $? != 0 ]]; then
+      echo "Error executing appsody build "
+      cleanup 12
+      exit 12 
+    fi
+    dockerImage=`cat build.log | grep "Built docker image" | awk '{print $NF}'`
+    echo "Running docker image $dockerImage"
+    if [[ -z $dockerImage ]]; then
+      echo "Docker image $dockerImage not found... exiting"
+      cleanup 12 
+      exit 12
+    else
+      # cleanup container.. or if it's helpful for debugging let's find another way
+      docker container run --rm --name $1br -d -p $HTTP_PORT:$HTTP_PORT -p $HTTPS_HOST_PORT:$HTTPS_PORT $dockerImage
+      if [[ $? != 0 ]]; then
+        echo "Error issuing docker container run.. Test Failed!!!!!"
+        stopDockerRun $1br
+        cleanup 12 
+        exit 12
+      else
+        healthURL="http://localhost:$HTTP_PORT"
+        checkHealthURL $healthURL
+        failed=`echo $result | grep "Failed!"`
+        if [[ ! -z $failed ]]; then 
+          stopDockerRun $1br
+          cleanup 12 
+          exit 12 
+        fi
+        appURL="http://localhost:$HTTP_PORT"
+        checkAppURL $appURL
+        up=`echo $result | grep Failed!`
+        if [[ ! -z $up ]]; then 
+           stopDockerRun $1br 
+           cleanup 12
+           exit 12 
+        else
+           stopDockerRun $1br
+           cleanup 0 
+        fi
+      fi
+    fi
+}
+
+####################################
+# Not currently being called. 
+# This does not work in a linux environment
+# Saving it because it does work on a Mac
+# May resurect later
+###################################
 doDeploy() {
     echo "Issuing appsody deploy"
     appsody deploy > deploy.log 2>&1
@@ -280,10 +369,13 @@ doDeploy() {
 TEMPLATE=""
 GIT_REPO=""
 BRANCH=""
-CONTEXT_ROOT=""
+URL_PATH=""
 STACK=""
 APPSODY_REPO=""
 TEST_HEALTH="Y"
+HTTP_PORT="9080"
+HTTPS_PORT="9443"
+HTTPS_HOST_PORT="9444"
 
 while [[ $# -gt 0 ]]
 do
@@ -314,8 +406,8 @@ case $key in
     shift # past argument
     shift # past value
     ;;
-    -c|--contextRoot)
-    CONTEXT_ROOT="$2"
+    -p|--path)
+    URL_PATH="$2"
     shift # past argument
     shift # past value
     ;;
@@ -336,7 +428,7 @@ echo "branch       = $BRANCH"
 echo "appsody repo = $APPSODY_REPO"
 echo "stack        = $STACK"
 echo "template     = $TEMPLATE"
-echo "context root = $CONTEXT_ROOT"
+echo "URL path     = $URL_PATH"
 
 checkParms
 
@@ -346,6 +438,7 @@ if [[ ! -z $appsodyNotInstalled ]]; then
   echo "appsody is not installed Please install appsody and try again"
   exit 12
 fi 
+ dockerPS
 
  # create a location for the STACK to be initialized
  cd /tmp
@@ -374,22 +467,36 @@ fi
     if [ ! -z $appsodyProjects ]; then
      for project in $appsodyProjects
       do
+        ########### Debug #######
+        echo "current project = $project"
+        
         appsodyConfig=.appsody-config.yaml
-        project=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
-        if [[ ! -z $project ]] && [[ $project != $appsodyConfig ]]; then
-           cd $project
+        projectLoc=`echo $project | awk '{split($0,a,".//"); print a[2]}' | awk '{split($0,a,"/$appsodyConfig"); print a[1]}'`   
+        if [[ ! -z $projectLoc ]] && [[ $projectLoc != $appsodyConfig ]]; then
+           cd $projectLoc
         fi
         project_loc=`pwd`
-        echo "Appsody run for project at $project_loc"
+        baseName=`basename $project_loc`
+        echo "Appsody tsting project at $project_loc"
+        echo "Project base name = $baseName"
         if [[ ! -f ".appsody-nodev" ]]; then
           doRun
-          stopRun
-          doDeploy
+          stopAppsodyRun
+          #doDeploy
+	  if [[ $URL_PATH=="/starter/resource" ]]; then
+            doBuildandRun $baseName
+          else
+            doBuildandRun $URL_PATH
+          fi
         else 
           echo "$project is a binary project run will be skipped"
-          doDeploy
+          #doDeploy
+          if [[ $URL_PATH=="/starter/resource" ]]; then 
+             doBuildandRun $baseName
+          else 
+             doBuildAndRun $URL_PATH
+          fi
         fi
-        cd - 
       done
     else
         echo "ERROR: no appsody  projects in repo"
@@ -409,7 +516,7 @@ fi
       exit 12
    fi
 
-   STACK_loc=test_$STACK
+   STACK_loc=test-$STACK
    mkdir $STACK_loc
    if [[ $? -ne 0 ]]; then
      echo "unable to create location to install STACK, exiting"
@@ -418,7 +525,7 @@ fi
 
    cd $STACK_loc
    if [[ $? -ne 0 ]]; then
-     echo "unable to cd to STACK install directory /tmp/$stack_loc, exiting"
+     echo "unable to cd to STACK install directory /tmp/$STACK_loc, exiting"
      exit 12
    fi
    ######################### 
@@ -432,7 +539,10 @@ fi
    fi
 
    doRun
-   stopRun
-   doDeploy 
+   stopAppsodyRun
+   if [[ $URL_PATH=="/starter/resource" ]]; then
+     doBuildandRun $STACK_loc
+   else
+     doBuildandRun $URL_PATH
+   fi
  fi
- cleanup 0 
