@@ -22,8 +22,10 @@ check_results() {
    echo "Test of $1 completed Successfully!"
    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!"
    echo " "
+   passedTests=$(( $passedTests + 1 ))
  fi
 }
+passedTests=0
 
 ./test-project.sh -g git@github.com:uberskigeek/AppsodyBinaryProjectTest.git -p /TangoApp_war/ -h N > test.log
 check_results AppsodyBinaryProjectTest
@@ -34,4 +36,8 @@ check_results appsody-projects
 ./test-project.sh -a dev.local -s java-openliberty > test.log
 check_results test_java-openliberty
 
-
+if [[ $passedTests != 3 ]]; then
+  echo "Only $passedTests passed out of 3. Errors have occurred please check the logs"
+else
+  echo "All tests have passed!! SUCCESS!!!"
+fi
