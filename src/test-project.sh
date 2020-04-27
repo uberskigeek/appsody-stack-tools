@@ -247,6 +247,18 @@ doRun() {
   fi
 }
 
+doTest() {
+ ###########################
+ # do a test from this STACK #
+ ############################
+  appsody test -p $HTTPS_HOST_PORT:$HTTPS_PORT  > test.log 
+  success=`cat test.log | grep "BUILD SUCCESS"`
+  if [[ -z $success ]]; then
+    cleanup 12
+    exit 12
+  fi
+
+}
 #############################
 # Print debugging
 ############################
@@ -482,6 +494,7 @@ fi
         if [[ ! -f ".appsody-nodev" ]]; then
           doRun
           stopAppsodyRun
+          doTest
           #doDeploy
 	  if [[ $URL_PATH=="/starter/resource" ]]; then
             doBuildandRun $baseName
@@ -540,6 +553,7 @@ fi
 
    doRun
    stopAppsodyRun
+   doTest
    if [[ $URL_PATH=="/starter/resource" ]]; then
      doBuildandRun $STACK_loc
    else
